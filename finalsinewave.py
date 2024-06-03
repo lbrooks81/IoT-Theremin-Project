@@ -1,5 +1,5 @@
 from pysinewave import SineWave
-from gpiozero import DistanceSensor, Button
+from gpiozero import DistanceSensor, Button, LED
 from math import sqrt
 from time import sleep
 from numpy import log
@@ -9,14 +9,17 @@ from pathlib import Path
 HERE = Path(__file__).parent.parent
 sys.path.append(str(HERE / 'Common'))
 from ADCdevice import * 
-
-USING_GRAVITECH_ADC = False
-
+USING_GRAVITECH_ADC = Fals
 ADC = ADCDevice()
+
 tone_sensor = DistanceSensor(trigger=21, echo=20)
 volume_sensor = DistanceSensor(trigger=19, echo=26)
+
 toggle_button = Button(12)
+toggle_LED = LED(17)
+
 kill_switch = Button(16)
+kill_LED = LED(18)
 
 def setup():
     global ADC
@@ -33,42 +36,64 @@ def setup():
         exit(-1)
 
 def get_frequency():
+    """Returns frequency based on distance sensor and the two adjustment knobs"""
     return round(ADC.analogRead(0) / 32) * (tone_sensor.distance) * 440 + ADC.analogRead(7)
 
 def get_volume():
+    """Returns volume based on distance sensor and adjustment knob"""
     return volume_sensor.distance * round(ADC.analogRead(5))
 
 
-def button_flip():
+def kill():
+    """Flips kill-switch boolean and adjusts the LED accordingly"""
+    global switch 
+    switch = not switch
+    if switch:
+        kill_LED.on()
+    else:
+        kill_LED.off()
+
+def toggle():
+    """Flips freeze-toggle boolean and adjusts the LED accordingly"""
     global pressed
     pressed = not pressed
 
+    if pressed == False:
+        toggle_LED.on()
+    else:
+        toggle_LED.off()
+
 def destroy():
-    tone_sensor.close()
-    volume_sensor.close()
-    ADC.close()
+    devices: list = (tone_sensor, volume_sensor, ADC, toggle_button, toggle_LED, kill_switch, kill_LED)
+    
+    for device in devices:
+        device.close()
     exit
 
 
 if __name__ == "__main__":
     setup()
-    pressed = False
-    wave = SineWave(decibels=20, pitch_per_second=48, decibels_per_second=64)
-    toggle_button.when_activated = button_flip
-    kill_switch.when_activated = wave.stop
+    wave = SineWave(decibels=10, pitch_per_second=48, decibels_per_second=64)
+    
+    pressed = False # Boolean used for freeze toggle
+    switch = False # Boolean used for kill switch
+    toggle_button.when_activated = toggle
+    toggle_LED.on()
+    kill_switch.when_activated = kill
+    
     while True:
         try:
-            if pressed:
+            if pressed: # Only changes frequency if the freeze-toggle is off
                 frequency = get_frequency()
                 wave.set_frequency(frequency)
 
             volume = get_volume()
             wave.set_volume(volume)
             
-            if tone_sensor.distance < .9:
+            if tone_sensor.distance < .9 and switch == False:
                 wave.play()
                 sleep(0.0022)
-            else:
+            else: # Stops wave if kill switch is active
                 wave.stop()
         except KeyboardInterrupt:
             destroy()    
